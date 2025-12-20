@@ -1,18 +1,25 @@
 package main
 
-import "net/http"
+import (
+	"net/http"
 
-func (app *Application) routes() *http.ServeMux{
+	"github.com/justinas/alice"
+)
+
+func (app *Application) routes() http.Handler{
 	mux := http.NewServeMux()
 
 	fileServer := http.FileServer(http.Dir("./ui/static/"))
-
 	mux.Handle("GET /static/", http.StripPrefix("/static", fileServer))
 
-	mux.HandleFunc("GET /{$}", app.home)
-	mux.HandleFunc("GET /snippet/view/{snippetId}", app.viewSnippet)
-	mux.HandleFunc("GET /snippet/create", app.snippetCreate)
-	mux.HandleFunc("POST /snippet/create", app.snippetCreatePost)
+	dynamic := alice.New(app.sessionManager.LoadAndSave)
 
-	return mux
+	mux.Handle("GET /{$}", dynamic.ThenFunc(app.home))
+	mux.Handle("GET /snippet/view/{snippetId}",  dynamic.ThenFunc(app.viewSnippet))
+	mux.Handle("GET /snippet/create",  dynamic.ThenFunc(app.snippetCreate))
+	mux.Handle("POST /snippet/create",  dynamic.ThenFunc(app.snippetCreatePost))
+
+	middelwareChain := alice.New(app.recoverPanic, app.logRequest, commonHeaders)
+
+	return middelwareChain.Then(mux)
 }
