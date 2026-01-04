@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -18,10 +19,11 @@ import (
 )
 
 type Application struct{
-	logger *slog.Logger
-	snippets *models.SnippetModel
-	templateCache map[string]*template.Template
-	formDecoder   *form.Decoder
+	logger 		   *slog.Logger
+	snippets 	   *models.SnippetModel
+	users          *models.UserModel
+	templateCache  map[string]*template.Template
+	formDecoder    *form.Decoder
 	sessionManager *scs.SessionManager
 }
 
@@ -55,6 +57,7 @@ func main() {
 	app := &Application{
 		logger: logger,
 		snippets: &models.SnippetModel{DB: db},
+		users:          &models.UserModel{DB: db},
 		templateCache: templateCache,
 		formDecoder: formDecoder,
 		sessionManager: sessionManager,
@@ -62,10 +65,24 @@ func main() {
 
 	flag.Parse()
 
-	app.logger.Info("Starting server", "Address", fmt.Sprintf("http://localhost%v", *address))
+	app.logger.Info("Starting server", "Address", fmt.Sprintf("https://localhost%v", *address))
 
-	err = http.ListenAndServe(*address, app.routes())
+	tlsConfig := &tls.Config{
+		CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},
+    }
 
+	server := &http.Server{
+		Addr: *address,
+		Handler: app.routes(),
+		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		TLSConfig: tlsConfig,
+
+		IdleTimeout:  time.Minute,
+        ReadTimeout:  5 * time.Second,
+        WriteTimeout: 10 * time.Second,
+	}
+
+    err = server.ListenAndServeTLS("./tls/cert.pem", "./tls/key.pem")
 	app.logger.Error(err.Error())
 	os.Exit(1)
 }
